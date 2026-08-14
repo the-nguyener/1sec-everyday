@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#0d0d14" />
+<title>1 Second Everyday</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+
+  <!-- ═══════════ HEADER ═══════════ -->
+  <header>
+    <div class="header-top">
+      <div class="brand"><span class="dot"></span> 1 Second</div>
+      <div class="header-actions">
+        <button class="btn-icon" id="todayBtn" title="Jump to today">📅</button>
+      </div>
+    </div>
+    <div class="month-nav" id="monthNav">
+      <button class="btn-nav" id="prevMonth">‹</button>
+      <h2 id="monthLabel">Loading…</h2>
+      <button class="btn-nav" id="nextMonth">›</button>
+    </div>
+  </header>
+
+  <!-- ═══════════ MAIN ═══════════ -->
+  <main>
+
+    <!-- ---- CALENDAR VIEW ---- -->
+    <section class="view active" id="calendarView">
+      <div class="stats-bar">
+        <div class="stat-card">
+          <div class="stat-num" id="statTotal">0</div>
+          <div class="stat-label">Total Clips</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="statMonth">0</div>
+          <div class="stat-label">This Month</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="statStreak">0</div>
+          <div class="stat-label">Day Streak</div>
+        </div>
+      </div>
+
+      <div class="weekdays">
+        <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span>
+        <span>Thu</span><span>Fri</span><span>Sat</span>
+      </div>
+      <div class="calendar" id="calendar"></div>
+    </section>
+
+    <!-- ---- TIMELINE VIEW ---- -->
+    <section class="view" id="timelineView">
+      <div class="timeline" id="timeline"></div>
+    </section>
+
+    <!-- ---- MASHUP VIEW ---- -->
+    <section class="view" id="mashupView">
+      <div class="mashup-card">
+        <h3>🎞️ Create a Mashup</h3>
+        <div class="range-presets" id="rangePresets">
+          <button class="range-btn sel" data-range="30">Last 30 Days</button>
+          <button class="range-btn" data-range="90">Last 90 Days</button>
+          <button class="range-btn" data-range="year">This Year</button>
+          <button class="range-btn" data-range="all">All Time</button>
+          <button class="range-btn" data-range="custom">Custom</button>
+        </div>
+
+        <div class="date-inputs" id="customRange" style="display:none;">
+          <label><span>Start</span><input type="date" id="rangeStart" /></label>
+          <label><span>End</span><input type="date" id="rangeEnd" /></label>
+        </div>
+
+        <button class="btn-primary" id="generateBtn">Generate Mashup</button>
+
+        <div class="mashup-progress" id="mashupProgress">
+          <div class="prog-label" id="progLabel">Preparing…</div>
+          <div class="prog-bar-bg"><div class="prog-bar-fill" id="progBar"></div></div>
+        </div>
+
+        <div class="mashup-result" id="mashupResult">
+          <video id="mashupVideo" controls playsinline></video>
+          <div class="mashup-actions">
+            <button class="btn-sec" id="downloadMashup">⬇️ Download</button>
+            <button class="btn-sec" id="closeMashup">✕ Close</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ═══════════ BOTTOM NAV ═══════════ -->
+  <nav class="bottom-nav">
+    <button class="nav-btn active" data-view="calendarView">
+      <span class="nav-icon">🗓️</span> Calendar
+    </button>
+    <button class="nav-btn" data-view="timelineView">
+      <span class="nav-icon">📜</span> Timeline
+    </button>
+    <button class="nav-btn" data-view="mashupView">
+      <span class="nav-icon">🎬</span> Mashup
+    </button>
+  </nav>
+
+  <!-- ═══════════ CAPTURE / UPLOAD MODAL ═══════════ -->
+  <div class="overlay" id="captureOverlay">
+    <div class="modal">
+      <div class="modal-handle" data-close="captureOverlay"></div>
+      <div class="modal-header">
+        <h3 id="captureTitle">Add 1 Second</h3>
+        <button class="modal-close" data-close="captureOverlay">✕</button>
+      </div>
+      <div class="modal-body">
+
+        <!-- Option buttons -->
+        <div class="capture-options" id="captureOptions">
+          <button class="cap-btn" id="recordBtn">
+            <span class="cap-icon">🎥</span><span>Record</span>
+          </button>
+          <button class="cap-btn" id="uploadBtn">
+            <span class="cap-icon">📁</span><span>Upload</span>
+          </button>
+        </div>
+        <input type="file" id="fileInput" accept="video/*" hidden />
+
+        <!-- Live recording preview -->
+        <div class="recorder-wrap" id="recorderWrap" style="display:none;">
+          <video id="liveVideo" autoplay muted playsinline
+                 style="width:100%;border-radius:10px;background:#000;max-height:220px;object-fit:cover;margin-bottom:12px;"></video>
+          <button class="btn-primary" id="recToggle">● Start Recording</button>
+          <p class="trimmer-label" id="recHint" style="text-align:center;margin-top:8px;">
+            Tap to record a few seconds
+          </p>
+        </div>
+
+        <!-- Trimmer -->
+        <div class="trimmer-wrap" id="trimmerWrap">
+          <p class="trimmer-label">Pick your 1-second moment</p>
+          <video id="trimPreview" playsinline muted></video>
+          <div class="trim-controls">
+            <div class="trim-row">
+              <label>Start</label>
+              <input type="range" id="trimSlider" min="0" max="100" value="0" step="0.1" style="flex:1;" />
+            </div>
+            <div class="trim-time" id="trimTime"
+                 style="font-size:0.75rem;color:var(--text-dim);text-align:center;">
+              0.0s → 1.0s
+            </div>
+          </div>
+          <label style="display:block;margin-bottom:12px;">
+            <span style="display:block;font-size:0.72rem;color:var(--text-dim);margin-bottom:5px;font-weight:600;">
+              Caption (optional)
+            </span>
+            <input type="text" id="captionInput" maxlength="120" placeholder="What happened today?"
+                   style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);font-size:0.9rem;" />
+          </label>
+          <button class="btn-primary" id="saveClipBtn">Save This Second</button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ PLAYBACK MODAL ═══════════ -->
+  <div class="overlay" id="playOverlay">
+    <div class="modal">
+      <div class="modal-handle" data-close="playOverlay"></div>
+      <div class="modal-header">
+        <h3 id="playDate">Clip</h3>
+        <button class="modal-close" data-close="playOverlay">✕</button>
+      </div>
+      <div class="modal-body">
+        <video id="playVideo" controls autoplay playsinline loop
+               style="width:100%;border-radius:10px;background:#000;max-height:360px;object-fit:contain;margin-bottom:12px;"></video>
+        <p id="playCaption" style="font-size:0.95rem;color:var(--text);margin-bottom:16px;min-height:1.2em;"></p>
+        <div style="display:flex;gap:10px;">
+          <button class="btn-sec" id="replaceClipBtn">🔄 Replace</button>
+          <button class="btn-sec" id="deleteClipBtn"
+                  style="color:var(--accent-2);border-color:var(--accent-2);">🗑️ Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hidden canvas used for mashup rendering -->
+  <canvas id="mashupCanvas" style="display:none;"></canvas>
+
+  <script src="/app.js"></script>
+</body>
+</html>
