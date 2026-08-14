@@ -60,10 +60,26 @@ async function apiUpload(iso, blob, caption) {
   const fd = new FormData();
   fd.append('clip_date', iso);
   fd.append('caption', caption || '');
-  const ext = blob.type.includes('mp4') ? 'mp4' : 'webm';
-  fd.append('video', blob, `clip.${ext}`);
+
+  // Determine a safe extension from the blob type
+  let ext = 'webm';
+  const t = (blob.type || '').toLowerCase();
+  if (t.includes('mp4')) ext = 'mp4';
+  else if (t.includes('quicktime')) ext = 'mov';
+  else if (t.includes('3gpp')) ext = '3gp';
+  else if (t.includes('matroska')) ext = 'mkv';
+
+  // Re-wrap the blob to guarantee a valid video MIME type before sending
+  const safeType = t.startsWith('video/') ? blob.type : 'video/webm';
+  const safeBlob = new Blob([blob], { type: safeType });
+
+  fd.append('video', safeBlob, `clip.${ext}`);
+
   const res = await fetch('/api/clips', { method: 'POST', body: fd });
-  if (!res.ok) throw new Error('Upload failed');
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error('Upload failed: ' + errText);
+  }
   return res.json();
 }
 async function apiDelete(iso) {
@@ -438,9 +454,12 @@ function trimToOneSecond(sourceBlob, startTime) {
       const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
       const chunks = [];
       recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
-      recorder.onstop = () => {
+            recorder.onstop = () => {
         URL.revokeObjectURL(url);
-        resolve(new Blob(chunks, { type: mimeType || 'video/webm' }));
+        // Force a valid video type — some Android browsers leave it blank
+        const outType = (mimeType && mimeType.startsWith('video/')) ? mimeType : 'video/webm';
+        const blob = new Blob(chunks, { type: outType });
+        resolve(blob);
       };
 
       video.currentTime = startTime;

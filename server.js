@@ -126,24 +126,22 @@ const ALLOWED_EXTENSIONS = new Set([
 
 const upload = multer({
   storage,
-  limits: { fileSize: 100 * 1024 * 1024 },  // 100MB (Samsung 4K videos are large)
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
   fileFilter: (_req, file, cb) => {
     const mime = (file.mimetype || '').toLowerCase().trim();
     const ext  = path.extname(file.originalname || '').toLowerCase();
 
-    // Accept if mime type is a known video type
-    if (mime.startsWith('video/'))          return cb(null, true);
-    if (ALLOWED_MIME_TYPES.has(mime))       return cb(null, true);
+    // ✅ PRIMARY CHECK: trust the extension. If it's a known video extension, accept it.
+    // Samsung/Android often report wrong MIME types (text/plain, octet-stream, etc.)
+    if (ALLOWED_EXTENSIONS.has(ext)) return cb(null, true);
 
-    // Accept if mime is octet-stream but extension is a video (Samsung gallery uploads)
-    if (mime === 'application/octet-stream' && ALLOWED_EXTENSIONS.has(ext)) return cb(null, true);
+    // Secondary: accept genuine video/* mime types even without extension
+    if (mime.startsWith('video/'))  return cb(null, true);
 
-    // Accept if no mime type was sent at all but extension looks like video
-    if ((!mime || mime === '') && ALLOWED_EXTENSIONS.has(ext)) return cb(null, true);
-
-    // Accept if original filename has no extension (MediaRecorder blob has no filename)
-    // This covers canvas-recorded blobs sent from the browser
-    if (!ext || ext === '') return cb(null, true);
+    // Tertiary: no extension AND no mime (raw blob) — accept it, we'll save as .webm
+    if (!ext && (!mime || mime === 'application/octet-stream' || mime === 'text/plain')) {
+      return cb(null, true);
+    }
 
     console.warn(`Rejected file: mime="${mime}", ext="${ext}", name="${file.originalname}"`);
     cb(new Error(`Unsupported file type: ${mime || 'unknown'}`));
