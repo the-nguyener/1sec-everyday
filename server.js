@@ -39,16 +39,29 @@ async function initDatabase(SQL) {
   }
 
   // Create table if it doesn't exist yet
-  db.run(`
+    db.run(`
     CREATE TABLE IF NOT EXISTS clips (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       clip_date   TEXT    NOT NULL UNIQUE,
       file_path   TEXT    NOT NULL,
       caption     TEXT    DEFAULT '',
       mime_type   TEXT    DEFAULT 'video/webm',
+      media_type  TEXT    DEFAULT 'video',
       created_at  TEXT    DEFAULT (datetime('now'))
     );
   `);
+
+  // Migration: add media_type column if upgrading an existing database
+  try {
+    const cols = queryAll("PRAGMA table_info(clips)");
+    const hasMediaType = cols.some(c => c.name === 'media_type');
+    if (!hasMediaType) {
+      db.run("ALTER TABLE clips ADD COLUMN media_type TEXT DEFAULT 'video'");
+      console.log('🔧 Migrated database: added media_type column');
+    }
+  } catch (e) {
+    console.warn('Migration check failed:', e.message);
+  }
 
   // Persist immediately so the file exists on disk
   saveDatabase();
@@ -94,11 +107,21 @@ const storage = multer.diskStorage({
     const mime = (file.mimetype || '').toLowerCase();
     const originalExt = path.extname(file.originalname || '').toLowerCase();
 
-    let ext = '.webm'; // safe default
-    if (mime.includes('mp4'))                    ext = '.mp4';
-    else if (mime.includes('quicktime'))         ext = '.mp4';
-    else if (mime.includes('3gpp'))              ext = '.3gp';
-    else if (mime.includes('matroska'))          ext = '.mkv';
+    let ext = '.webm'; // safe default for video blobs
+    // Video types
+    if (mime.includes('mp4'))            ext = '.mp4';
+    else if (mime.includes('quicktime')) ext = '.mov';
+    else if (mime.includes('3gpp'))      ext = '.3gp';
+    else if (mime.includes('matroska'))  ext = '.mkv';
+    else if (mime.includes('webm'))      ext = '.webm';
+    // Image types
+    else if (mime.includes('jpeg') || mime.includes('jpg')) ext = '.jpg';
+    else if (mime.includes('png'))       ext = '.png';
+    else if (mime.includes('gif'))       ext = '.gif';
+    else if (mime.includes('webp'))      ext = '.webp';
+    else if (mime.includes('heic'))      ext = '.heic';
+    else if (mime.includes('heif'))      ext = '.heif';
+    // Fall back to the original extension if we have one
     else if (originalExt && originalExt !== '.') ext = originalExt;
 
     cb(null, `clip_${date}_${Date.now()}${ext}`);
@@ -120,8 +143,10 @@ const ALLOWED_MIME_TYPES = new Set([
 ]);
 
 const ALLOWED_EXTENSIONS = new Set([
-  '.webm', '.mp4', '.mov', '.mkv',
-  '.ogg', '.3gp', '.avi', '.mpeg', '.mpg',
+  // Video
+  '.webm', '.mp4', '.mov', '.mkv', '.ogg', '.3gp', '.avi', '.mpeg', '.mpg',
+  // Images
+  '.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif', '.bmp',
 ]);
 
 const upload = multer({
@@ -131,14 +156,14 @@ const upload = multer({
     const mime = (file.mimetype || '').toLowerCase().trim();
     const ext  = path.extname(file.originalname || '').toLowerCase();
 
-    // ✅ PRIMARY CHECK: trust the extension. If it's a known video extension, accept it.
-    // Samsung/Android often report wrong MIME types (text/plain, octet-stream, etc.)
+    // Trust the extension first (Samsung/Android report wrong MIME types)
     if (ALLOWED_EXTENSIONS.has(ext)) return cb(null, true);
 
-    // Secondary: accept genuine video/* mime types even without extension
-    if (mime.startsWith('video/'))  return cb(null, true);
+    // Accept genuine video/* or image/* mime types
+    if (mime.startsWith('video/')) return cb(null, true);
+    if (mime.startsWith('image/')) return cb(null, true);
 
-    // Tertiary: no extension AND no mime (raw blob) — accept it, we'll save as .webm
+    // No extension + generic mime — accept (raw blob)
     if (!ext && (!mime || mime === 'application/octet-stream' || mime === 'text/plain')) {
       return cb(null, true);
     }
@@ -210,41 +235,37 @@ app.post('/api/clips', upload.single('video'), (req, res) => {
   try {
     const { clip_date, caption } = req.body;
 
-    if (!clip_date) {
-      return res.status(400).json({ error: 'clip_date is required' });
-    }
-    if (!req.file) {
-      return res.status(400).json({ error: 'video file is required' });
-    }
+    if (!clip_date) return res.status(400).json({ error: 'clip_date is required' });
+    if (!req.file)  return res.status(400).json({ error: 'file is required' });
 
     const filePath = `/uploads/${req.file.filename}`;
 
-    // Check for an existing clip on this date
+    // Determine media type from mime OR file extension
+    const mime = (req.file.mimetype || '').toLowerCase();
+    const ext  = path.extname(req.file.filename).toLowerCase();
+    const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif', '.bmp'];
+    const isImage = mime.startsWith('image/') || imageExts.includes(ext);
+    const mediaType = isImage ? 'image' : 'video';
+
     const existing = queryOne('SELECT * FROM clips WHERE clip_date = ?', [clip_date]);
 
     if (existing) {
-      // Delete old file
-      const oldFilename = path.basename(existing.file_path);
-      const oldFullPath = path.join(UPLOADS_DIR, oldFilename);
+      const oldFullPath = path.join(UPLOADS_DIR, path.basename(existing.file_path));
       if (fs.existsSync(oldFullPath)) {
-        try { fs.unlinkSync(oldFullPath); } catch (_) { /* ignore */ }
+        try { fs.unlinkSync(oldFullPath); } catch (_) {}
       }
-      // Update record
       run(
         `UPDATE clips
-            SET file_path  = ?,
-                caption    = ?,
-                mime_type  = ?,
+            SET file_path = ?, caption = ?, mime_type = ?, media_type = ?,
                 created_at = datetime('now')
-          WHERE clip_date  = ?`,
-        [filePath, caption || '', req.file.mimetype, clip_date]
+          WHERE clip_date = ?`,
+        [filePath, caption || '', req.file.mimetype, mediaType, clip_date]
       );
     } else {
-      // Insert new record
       run(
-        `INSERT INTO clips (clip_date, file_path, caption, mime_type)
-         VALUES (?, ?, ?, ?)`,
-        [clip_date, filePath, caption || '', req.file.mimetype]
+        `INSERT INTO clips (clip_date, file_path, caption, mime_type, media_type)
+         VALUES (?, ?, ?, ?, ?)`,
+        [clip_date, filePath, caption || '', req.file.mimetype, mediaType]
       );
     }
 

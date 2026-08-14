@@ -159,12 +159,19 @@ function renderCalendar() {
     if (isFuture) cell.classList.add('future');
     cell.dataset.date = iso;
 
-    cell.innerHTML = `
-      <span class="day-num">${d}</span>
-      ${clip ? `<video class="clip-thumb" src="${clip.file_path}#t=0.1" muted playsinline preload="metadata"></video>
-                <div class="day-play-overlay"><span>▶</span></div>`
-             : `<div class="day-add">+</div>`}
-    `;
+        let mediaHtml;
+    if (clip) {
+      if (clip.media_type === 'image') {
+        mediaHtml = `<img class="clip-thumb" src="${clip.file_path}" alt="" />
+                     <div class="day-play-overlay"><span>🖼</span></div>`;
+      } else {
+        mediaHtml = `<video class="clip-thumb" src="${clip.file_path}#t=0.1" muted playsinline preload="metadata"></video>
+                     <div class="day-play-overlay"><span>▶</span></div>`;
+      }
+    } else {
+      mediaHtml = `<div class="day-add">+</div>`;
+    }
+    cell.innerHTML = `<span class="day-num">${d}</span>${mediaHtml}`;
 
     if (!isFuture) {
       cell.addEventListener('click', () => {
@@ -196,11 +203,14 @@ function renderTimeline() {
   sorted.forEach((clip) => {
     const item = document.createElement('div');
     item.className = 'tl-item';
+    const thumbInner = clip.media_type === 'image'
+      ? `<img src="${clip.file_path}" alt="" style="width:100%;height:100%;object-fit:cover;display:block;" />
+         <div class="tl-play">🖼</div>`
+      : `<video src="${clip.file_path}#t=0.1" muted playsinline preload="metadata"></video>
+         <div class="tl-play">▶</div>`;
+
     item.innerHTML = `
-      <div class="tl-thumb">
-        <video src="${clip.file_path}#t=0.1" muted playsinline preload="metadata"></video>
-        <div class="tl-play">▶</div>
-      </div>
+      <div class="tl-thumb">${thumbInner}</div>
       <div class="tl-info">
         <div class="tl-date">${prettyDate(clip.clip_date)}</div>
         <div class="tl-caption ${clip.caption ? '' : 'no-cap'}">
@@ -277,11 +287,27 @@ function closeAndCleanup(id) {
 function openCapture(iso) {
   state.selectedDate = iso;
   state.trimmedBlob = null;
+  pendingImageBlob = null;
+
   $('#captureTitle').textContent = `Add · ${prettyDate(iso)}`;
   $('#captureOptions').style.display = 'flex';
   $('#recorderWrap').style.display = 'none';
   $('#trimmerWrap').classList.remove('show');
   $('#captionInput').value = '';
+
+  // Reset video trimmer UI (in case an image was shown last time)
+  $('#trimPreview').style.display = 'block';
+  const trimControls = document.querySelector('.trim-controls');
+  if (trimControls) trimControls.style.display = 'flex';
+
+  // Hide the image preview if it exists
+  const imgPreview = document.getElementById('imgPreview');
+  if (imgPreview) imgPreview.style.display = 'none';
+
+  // Reset the trimmer label back to default
+  const label = document.querySelector('.trimmer-wrap .trimmer-label');
+  if (label) label.textContent = 'Pick your 1-second moment';
+
   openOverlay('captureOverlay');
 }
 
@@ -289,8 +315,14 @@ function openCapture(iso) {
 $('#uploadBtn').addEventListener('click', () => $('#fileInput').click());
 $('#fileInput').addEventListener('change', (e) => {
   const file = e.target.files[0];
-  if (file) loadIntoTrimmer(file);
-  e.target.value = ''; // reset so same file can be reselected
+  if (file) {
+    if (file.type.startsWith('image/') || /\.(jpe?g|png|gif|webp|heic|heif|bmp)$/i.test(file.name)) {
+      loadImageDirect(file);       // images skip the video trimmer
+    } else {
+      loadIntoTrimmer(file);       // videos go through the trimmer
+    }
+  }
+  e.target.value = '';
 });
 
 // Record path
@@ -372,6 +404,40 @@ function beginRecording() {
 // ─── TRIMMER ────────────────────────────────────────────────────
 let trimObjectUrl = null;
 
+// ─── IMAGE HANDLING ─────────────────────────────────────────────
+let imageObjectUrl = null;
+let pendingImageBlob = null;
+
+function loadImageDirect(file) {
+  pendingImageBlob = file;
+  if (imageObjectUrl) URL.revokeObjectURL(imageObjectUrl);
+  imageObjectUrl = URL.createObjectURL(file);
+
+  // Reuse the trimmer wrap but show an image instead of video controls
+  $('#captureOptions').style.display = 'none';
+  $('#trimmerWrap').classList.add('show');
+
+  // Hide the video trim controls, show an image preview
+  $('#trimPreview').style.display = 'none';
+  const trimControls = document.querySelector('.trim-controls');
+  if (trimControls) trimControls.style.display = 'none';
+
+  let imgPreview = document.getElementById('imgPreview');
+  if (!imgPreview) {
+    imgPreview = document.createElement('img');
+    imgPreview.id = 'imgPreview';
+    imgPreview.style.cssText =
+      'width:100%;border-radius:10px;background:#000;display:block;max-height:220px;object-fit:contain;margin-bottom:12px;';
+    $('#trimPreview').parentNode.insertBefore(imgPreview, $('#trimPreview'));
+  }
+  imgPreview.style.display = 'block';
+  imgPreview.src = imageObjectUrl;
+
+  // Change the label
+  const label = document.querySelector('.trimmer-wrap .trimmer-label');
+  if (label) label.textContent = 'Add this photo';
+}
+
 function loadIntoTrimmer(fileOrBlob) {
   if (trimObjectUrl) URL.revokeObjectURL(trimObjectUrl);
   trimObjectUrl = URL.createObjectURL(fileOrBlob);
@@ -415,17 +481,26 @@ $('#saveClipBtn').addEventListener('click', async () => {
   btn.disabled = true;
   btn.textContent = 'Processing…';
   try {
-    const start = parseFloat($('#trimSlider').value) || 0;
-    const trimmed = await trimToOneSecond($('#trimPreview')._sourceBlob, start);
     const caption = $('#captionInput').value.trim();
-    await apiUpload(state.selectedDate, trimmed, caption);
+
+    if (pendingImageBlob) {
+      // Image path — upload directly, no trimming
+      await apiUpload(state.selectedDate, pendingImageBlob, caption);
+      pendingImageBlob = null;
+    } else {
+      // Video path — trim to 1 second
+      const start = parseFloat($('#trimSlider').value) || 0;
+      const trimmed = await trimToOneSecond($('#trimPreview')._sourceBlob, start);
+      await apiUpload(state.selectedDate, trimmed, caption);
+    }
+
     closeAndCleanup('captureOverlay');
     await refreshData();
   } catch (err) {
-    alert('Failed to save clip: ' + err.message);
+    alert('Failed to save: ' + err.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Save This Second';
+    btn.textContent = 'Save';
   }
 });
 
@@ -498,9 +573,31 @@ function openPlayback(iso) {
   state.selectedDate = iso;
   $('#playDate').textContent = prettyDate(iso);
   $('#playCaption').textContent = clip.caption || '';
+
   const v = $('#playVideo');
-  v.src = clip.file_path;
-  v.load();
+  let img = document.getElementById('playImage');
+
+  if (clip.media_type === 'image') {
+    // Hide video, show image
+    v.pause();
+    v.style.display = 'none';
+    if (!img) {
+      img = document.createElement('img');
+      img.id = 'playImage';
+      img.style.cssText =
+        'width:100%;border-radius:10px;background:#000;display:block;max-height:360px;object-fit:contain;margin-bottom:12px;';
+      v.parentNode.insertBefore(img, v);
+    }
+    img.style.display = 'block';
+    img.src = clip.file_path;
+  } else {
+    // Show video, hide image
+    if (img) img.style.display = 'none';
+    v.style.display = 'block';
+    v.src = clip.file_path;
+    v.load();
+  }
+
   openOverlay('playOverlay');
 }
 
