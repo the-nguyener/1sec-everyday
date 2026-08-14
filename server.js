@@ -99,6 +99,24 @@ function run(sql, params = []) {
   saveDatabase();   // persist every mutation
 }
 
+// ─── Simple password protection ────────────────────────────────
+const APP_PASSWORD = process.env.APP_PASSWORD || 'changeme';
+
+app.use((req, res, next) => {
+  // Allow the login check itself through
+  const auth = req.headers.authorization || '';
+  const [scheme, encoded] = auth.split(' ');
+
+  if (scheme === 'Basic' && encoded) {
+    const decoded = Buffer.from(encoded, 'base64').toString();
+    const [, password] = decoded.split(':');
+    if (password === APP_PASSWORD) return next();
+  }
+
+  res.set('WWW-Authenticate', 'Basic realm="1 Second Everyday"');
+  res.status(401).send('Authentication required');
+});
+
 // ─── Multer config ────────────────────────────────────────────────────────────
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
