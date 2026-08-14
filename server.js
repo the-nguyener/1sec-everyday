@@ -91,17 +91,62 @@ const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
   filename: (req, file, cb) => {
     const date = (req.body.clip_date || 'clip').replace(/[^0-9-]/g, '');
-    const ext  = file.mimetype.includes('mp4') ? '.mp4' : '.webm';
+    const mime = (file.mimetype || '').toLowerCase();
+    const originalExt = path.extname(file.originalname || '').toLowerCase();
+
+    let ext = '.webm'; // safe default
+    if (mime.includes('mp4'))                    ext = '.mp4';
+    else if (mime.includes('quicktime'))         ext = '.mp4';
+    else if (mime.includes('3gpp'))              ext = '.3gp';
+    else if (mime.includes('matroska'))          ext = '.mkv';
+    else if (originalExt && originalExt !== '.') ext = originalExt;
+
     cb(null, `clip_${date}_${Date.now()}${ext}`);
   },
 });
 
+const ALLOWED_MIME_TYPES = new Set([
+  'video/webm',
+  'video/mp4',
+  'video/quicktime',
+  'video/x-matroska',
+  'video/mkv',
+  'video/ogg',
+  'video/3gpp',
+  'video/3gpp2',
+  'video/x-msvideo',
+  'video/mpeg',
+  'video/avi',
+]);
+
+const ALLOWED_EXTENSIONS = new Set([
+  '.webm', '.mp4', '.mov', '.mkv',
+  '.ogg', '.3gp', '.avi', '.mpeg', '.mpg',
+]);
+
 const upload = multer({
   storage,
-  limits: { fileSize: 50 * 1024 * 1024 },   // 50 MB
+  limits: { fileSize: 100 * 1024 * 1024 },  // 100MB (Samsung 4K videos are large)
   fileFilter: (_req, file, cb) => {
-    if (file.mimetype.startsWith('video/')) cb(null, true);
-    else cb(new Error('Only video files are allowed'));
+    const mime = (file.mimetype || '').toLowerCase().trim();
+    const ext  = path.extname(file.originalname || '').toLowerCase();
+
+    // Accept if mime type is a known video type
+    if (mime.startsWith('video/'))          return cb(null, true);
+    if (ALLOWED_MIME_TYPES.has(mime))       return cb(null, true);
+
+    // Accept if mime is octet-stream but extension is a video (Samsung gallery uploads)
+    if (mime === 'application/octet-stream' && ALLOWED_EXTENSIONS.has(ext)) return cb(null, true);
+
+    // Accept if no mime type was sent at all but extension looks like video
+    if ((!mime || mime === '') && ALLOWED_EXTENSIONS.has(ext)) return cb(null, true);
+
+    // Accept if original filename has no extension (MediaRecorder blob has no filename)
+    // This covers canvas-recorded blobs sent from the browser
+    if (!ext || ext === '') return cb(null, true);
+
+    console.warn(`Rejected file: mime="${mime}", ext="${ext}", name="${file.originalname}"`);
+    cb(new Error(`Unsupported file type: ${mime || 'unknown'}`));
   },
 });
 
