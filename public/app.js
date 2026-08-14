@@ -161,7 +161,7 @@ function renderCalendar() {
 
         let mediaHtml;
     if (clip) {
-      if (clip.media_type === 'image') {
+            if (isImageClip(clip)) {
         mediaHtml = `<img class="clip-thumb" src="${clip.file_path}" alt="" />
                      <div class="day-play-overlay"><span>🖼</span></div>`;
       } else {
@@ -203,7 +203,7 @@ function renderTimeline() {
   sorted.forEach((clip) => {
     const item = document.createElement('div');
     item.className = 'tl-item';
-    const thumbInner = clip.media_type === 'image'
+    const thumbInner = isImageClip(clip)
       ? `<img src="${clip.file_path}" alt="" style="width:100%;height:100%;object-fit:cover;display:block;" />
          <div class="tl-play">🖼</div>`
       : `<video src="${clip.file_path}#t=0.1" muted playsinline preload="metadata"></video>
@@ -226,6 +226,13 @@ function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+
+// Detect if a clip is an image (checks media_type, falls back to file extension)
+function isImageClip(clip) {
+  if (clip.media_type === 'image') return true;
+  if (clip.media_type === 'video') return false;
+  return /\.(jpe?g|png|gif|webp|heic|heif|bmp)$/i.test(clip.file_path || '');
 }
 
 // ─── View / nav switching ───────────────────────────────────────
@@ -577,7 +584,7 @@ function openPlayback(iso) {
   const v = $('#playVideo');
   let img = document.getElementById('playImage');
 
-  if (clip.media_type === 'image') {
+  if (isImageClip(clip)) {
     // Hide video, show image
     v.pause();
     v.style.display = 'none';

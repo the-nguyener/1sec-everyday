@@ -241,11 +241,16 @@ app.post('/api/clips', upload.single('video'), (req, res) => {
     const filePath = `/uploads/${req.file.filename}`;
 
     // Determine media type from mime OR file extension
-    const mime = (req.file.mimetype || '').toLowerCase();
-    const ext  = path.extname(req.file.filename).toLowerCase();
+        const mime = (req.file.mimetype || '').toLowerCase();
+    const savedExt = path.extname(req.file.filename).toLowerCase();
+    const origExt = path.extname(req.file.originalname || '').toLowerCase();
     const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif', '.bmp'];
-    const isImage = mime.startsWith('image/') || imageExts.includes(ext);
+    const isImage =
+      mime.startsWith('image/') ||
+      imageExts.includes(savedExt) ||
+      imageExts.includes(origExt);
     const mediaType = isImage ? 'image' : 'video';
+    console.log(`Saved ${mediaType}: mime="${mime}", savedExt="${savedExt}", origExt="${origExt}"`);
 
     const existing = queryOne('SELECT * FROM clips WHERE clip_date = ?', [clip_date]);
 
