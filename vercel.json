@@ -1,9 +1,13 @@
 {
   "version": 2,
-  "buildCommand": null,
   "outputDirectory": "public",
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
-  ]
+  ],
+  "functions": {
+    "api/**/*.js": {
+      "includeFiles": "node_modules/sql.js/dist/**"
+    }
+  }
 }
