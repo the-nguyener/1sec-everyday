@@ -75,7 +75,7 @@ async function apiUpload(iso, blob, caption) {
 
   fd.append('video', safeBlob, `clip.${ext}`);
 
-  const res = await fetch('/api/clips', { method: 'POST', body: fd });
+  const res = await fetch('/api/upload', { method: 'POST', body: fd });
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
     throw new Error('Upload failed: ' + errText);
@@ -83,7 +83,7 @@ async function apiUpload(iso, blob, caption) {
   return res.json();
 }
 async function apiDelete(iso) {
-  const res = await fetch(`/api/clips/${iso}`, { method: 'DELETE' });
+  const res = await fetch(`/api/clip/${iso}`, { method: 'DELETE' });
   return res.ok;
 }
 
